@@ -18,6 +18,9 @@ var flash    = require('connect-flash');
 
 var configDB = require('./config/database.js');
 
+var User = require('./models/user');
+var createToken = require('./config/generateToken');
+
 var app = express();
 
 mongoose.Model.on('index', function(err) {
@@ -65,8 +68,25 @@ app.use(function(err, req, res, next) {
   res.locals.error = req.app.get('env') === 'development' ? err : {};
 
   // render the error page
-  res.status(err.status || 500);
-  res.render('error');
+  if (err.name === 'UnauthorizedError') {
+    if (req.user) {
+      User.findOne({
+        'refreshToken.token' : req.user.refreshToken.token }, function(err, user) {
+        if (err) {
+          return next(err)
+        }
+        createToken.generateAccessToken(user, function(token) {
+          res.json({ status: "success", token: token, user: user });
+        });
+      });
+    } else {
+      res.status(401).send('invalid token...');
+    }
+  } else {
+    res.status(err.status || 500);
+    res.render('error');
+  }
+
 });
 
 app.listen(port);

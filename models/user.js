@@ -28,8 +28,13 @@ var userSchema = mongoose.Schema({
         email        : String,
         name         : String
     },
+    refreshToken: {
+        token: String,
+        expires: Date
+    },
 
     application: String
+
 });
 
 // methods ======================

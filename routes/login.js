@@ -3,10 +3,11 @@ var router = express.Router();
 var urlencode = require('urlencode');
 
 var mongoose = require('mongoose');
+var createToken = require('../config/generateToken.js')
 
-var jwt = require('jsonwebtoken');
 const expressJwt = require('express-jwt');
-const jwtAuthenticate = expressJwt({secret : 'server secret'});
+const SECRET = 'server secret';
+const jwtAuthenticate = expressJwt({secret : SECRET});
 
 var User = require('../models/user');
 
@@ -37,48 +38,6 @@ router.post('/auth/signup', function(req, res, next) {
         });
       }
     });
-  } else if (req.body.user && req.body.user.facebook) {
-    // see if the user already exists. If not, add the user
-    User.findOne({ "facebook.email" : req.body.user.facebook.email }, function(err, user) {
-      if (user) {
-        res.json({ "status": "error", "message": "Facebook account already exists"});
-      } else {
-        var newUser = new User();
-
-        // set the user's local credentials
-        newUser.facebook.email = req.body.user.facebook.email;
-        newUser.facebook.token = req.body.user.facebook.token;
-        newUser.facebook.name = req.body.user.facebook.name;
-
-        // save the user
-        newUser.save(function(err, user) {
-            if (err)
-                throw err;
-            res.json({ status: "success", user: user });
-        });
-      }
-    });
-  } else if (req.body.user && req.body.user.twitter) {
-    // see if the user already exists. If not, add the user
-    User.findOne({ "twitter.username" : req.body.user.twitter.username }, function(err, user) {
-      if (user) {
-        res.json({ "status": "error", "message": "Twitter account already exists"});
-      } else {
-        var newUser = new User();
-
-        // set the user's local credentials
-        newUser.twitter.displayName = req.body.user.twitter.displayName;
-        newUser.twitter.token = req.body.user.twitter.token;
-        newUser.twitter.username = req.body.user.twitter.username;
-
-        // save the user
-        newUser.save(function(err, user) {
-            if (err)
-                throw err;
-            res.json({ status: "success", user: user });
-        });
-      }
-    });
   } else {
     res.json({ 'status': 'error'})
   }
@@ -95,31 +54,84 @@ router.post('/auth/login', function(req, res, next) {
 
     });
   } else if (req.body.user.facebook) {
-    User.findOne({
-      'facebook.token' : req.body.user.facebook.token }, function(err, user) {
-      if (err) {
-        return next(err)
+    // see if the user already exists. If not, add the user
+    User.findOne({ "facebook.id" : req.body.user.facebook.id }, function(err, user) {
+      if (user) {
+        user.facebook.token = req.body.user.facebook.token;
+
+        user.save(function(err, user) {
+          if (err) {
+            throw err;
+          } else {
+            processUser(user, res);
+          }
+        });
+      } else {
+        var newUser = new User();
+
+        // set the user's local credentials
+        newUser.facebook.token = req.body.user.facebook.token;
+        newUser.facebook.name = req.body.user.facebook.name;
+        newUser.facebook.id = req.body.user.facebook.id;
+
+        // save the user
+        newUser.save(function(err, user) {
+            if (err)
+                throw err;
+
+            processUser(user, res);
+        });
       }
-
-      processUser(user, res);
-
     });
   } else if (req.body.user.twitter) {
-    User.findOne({ 'twitter.token' : req.body.user.twitter.token }, function(err, user) {
-      if (err) {
-        return next(err)
+    // see if the user already exists. If not, add the user
+    User.findOne({ "twitter.username" : req.body.user.twitter.username }, function(err, user) {
+      if (user) {
+        res.json({ "status": "error", "message": "Twitter account already exists"});
+      } else {
+        var newUser = new User();
+
+        // set the user's local credentials
+        newUser.twitter.displayName = req.body.user.twitter.displayName;
+        newUser.twitter.token = req.body.user.twitter.token;
+        newUser.twitter.username = req.body.user.twitter.username;
+
+        // save the user
+        newUser.save(function(err, user) {
+            if (err)
+                throw err;
+            processUser(user, res);
+        });
       }
-
-      processUser(user, res);
-
     });
   } else {
     res.json({ "status": "error" });
   }
 });
 
-router.get('/logout', function(req, res, next) {
+router.post('/auth/logout', function(req, res, next) {
+  console.log("logging out " + req.body.user);
 
+  if (req.body.user && req.body.user.local) {
+    res.json({ status: "success", message: "logged out" });
+  } else if (req.body.user && req.body.user.facebook) {
+    User.findOne({
+      'facebook.token' : req.body.user.facebook.token }, function(err, user) {
+      if (err) {
+        return next(err)
+      }
+
+      user.token = null;
+      user.save(function(err, user) {
+        if (err)
+            throw err;
+
+        res.json({ status: "success", message: "logged out" });
+      });
+    });
+  } else if (req.body.user && req.body.user.twitter) {
+
+  }
 });
 
 router.get('/auth/authenticate', jwtAuthenticate, function(req, res, next) {
@@ -132,13 +144,12 @@ var processUser = function(user, res) {
   } else {
 
     //user has authenticated correctly thus we create a JWT token
-    var token = jwt.sign({
-        id: user._id,
-      }, 'server secret', {
-        expiresIn : 60*60*24
+    createToken.generateAccessToken(user, function(token) {
+      createToken.generateRefreshToken(user, function(aUser) {
+        console.log(aUser);
+        res.json({ status: "success", token: token, user: aUser });
       });
-
-    res.json({ status: "success", token: token, user: user });
+    });
   }
 };
 
